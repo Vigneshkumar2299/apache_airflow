@@ -1,11 +1,34 @@
+# cloudbuild.yaml
 steps:
-  # install dependencies
-  - name: python:3.8-slim
-    entrypoint: pip
-    args: ["install", "-r", "requirements.txt", "--user"]
-  # run in python 3.8 which is latest version in Cloud Composer
-  - name: python:3.8-slim
-    entrypoint: python3.8
-    args: [ "-m", "pytest", "-s", "dags/" ]
-    options:
-      logging: CLOUD_LOGGING_ONLY  # Ensure logging is configured as required
+  # Step to clone the GitHub repository containing DAG files
+  - name: 'gcr.io/cloud-builders/git'
+    args:
+      - 'clone'
+      - '--single-branch'
+      - '--depth=1'  # Optionally specify depth if you want only the latest commit
+      - 'https://github.com/your-username/your-repo.git'  # Replace with your GitHub repo URL
+      - '/workspace/repo'
+
+  # Step to copy DAG files from cloned repo to Cloud Storage
+  - name: 'gcr.io/cloud-builders/gsutil'
+    args:
+      - '-m'  # Enables parallel copying for faster execution
+      - 'cp'
+      - '-r'  # Recursively copy if source is a directory
+      - '/workspace/repo/dags/*'  # Path to DAGs in cloned repo
+      - 'gs://your-bucket-name/dags/'  # Destination path in Cloud Storage (adjust as needed)
+
+  # Step to sync DAG files from Cloud Storage to Cloud Composer environment
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}
+        gcloud composer environments storage dags import \
+          --environment=${COMPOSER_ENVIRONMENT} \
+          --location=${COMPOSER_LOCATION} \
+          --source=gs://your-bucket-name/dags/
+
+substitutions:
+  _YOUR_VARIABLE: value
